@@ -1,0 +1,305 @@
+{
+  "name": "Loay — Daily Task Manager",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 6,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "trigger-morning",
+      "name": "Every Morning 6 AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [0, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================\n// LOAY'S SHIFT PATTERN CALCULATOR\n// Anchor: Sunday 12 July 2026 = Work day (index 0)\n// 14-day repeating pattern:\n// W W F F W W F F F W W W F F\n// 0 1 2 3 4 5 6 7 8 9 10 11 12 13\n// W = Work (12H shift), F = Free day\n// ============================================================\n\nconst PATTERN = ['W','W','F','F','W','W','F','F','F','W','W','W','F','F'];\nconst ANCHOR = new Date('2026-07-12T00:00:00.000Z');\n\nfunction getDayType(date) {\n  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());\n  const a = new Date(ANCHOR.getFullYear(), ANCHOR.getMonth(), ANCHOR.getDate());\n  const diffMs = d - a;\n  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));\n  const idx = ((diffDays % 14) + 14) % 14;\n  return PATTERN[idx];\n}\n\nconst today = new Date();\nconst tomorrow = new Date(today);\ntomorrow.setDate(today.getDate() + 1);\nconst yesterday = new Date(today);\nyesterday.setDate(today.getDate() - 1);\n\nconst todayType = getDayType(today);\nconst tomorrowType = getDayType(tomorrow);\nconst isFree = todayType === 'F';\nconst isSaturday = today.getDay() === 6;\n\n// Gym rule: go on free days OR the day before a free day\nconst isGymDay = isFree || tomorrowType === 'F';\n\n// Build next 7 days preview\nconst weekPreview = [];\nconst dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];\nfor (let i = 0; i < 7; i++) {\n  const d = new Date(today);\n  d.setDate(today.getDate() + i);\n  weekPreview.push({\n    day: dayNames[d.getDay()],\n    date: d.getDate() + '/' + (d.getMonth()+1),\n    type: getDayType(d),\n    isSat: d.getDay() === 6\n  });\n}\n\n// Prayer times for Cairo (approximate — user should verify with prayer app)\nconst prayers = [\n  { name: 'Fajr', time: '03:45 AM' },\n  { name: 'Dhuhr', time: '12:00 PM' },\n  { name: 'Asr', time: '03:30 PM' },\n  { name: 'Maghrib', time: '06:45 PM' },\n  { name: 'Isha', time: '08:15 PM' }\n];\n\n// Build track tasks for today\nconst trackTasks = [\n  { task: 'Study something track-related', time: 'Evening', note: 'Minimum 30 minutes — no excuses' },\n  { task: 'Git commit', time: 'Evening', note: 'Push any code you wrote today' }\n];\nif (isSaturday) {\n  trackTasks.push({ task: 'Diploma 1 session', time: 'Morning', note: '6 hours — full focus, no distractions' });\n}\n\n// Build personal tasks for today\nconst personalTasks = [\n  { task: 'Fajr prayer', time: '03:45 AM', category: 'Prayer' },\n  { task: 'Read 5 pages', time: 'After Fajr or before sleep', category: 'Reading' },\n  { task: 'Dhuhr prayer', time: '12:00 PM', category: 'Prayer' },\n  { task: 'Asr prayer', time: '03:30 PM', category: 'Prayer' },\n  { task: 'Maghrib prayer', time: '06:45 PM', category: 'Prayer' },\n  { task: 'Isha prayer', time: '08:15 PM', category: 'Prayer' }\n];\nif (isGymDay) {\n  personalTasks.push({ \n    task: 'Gym session', \n    time: 'Afternoon', \n    category: 'Gym',\n    note: tomorrowType === 'F' && !isFree ? 'Tomorrow is free — good energy today' : 'Free day — get it done'\n  });\n}\n\n// Day type message\nlet dayMessage = '';\nif (isSaturday) {\n  dayMessage = '📚 DIPLOMA DAY — 6 hours, full focus. This is what the whole week was building toward.';\n} else if (isFree) {\n  dayMessage = '🟢 FREE DAY — Deep study day. Wake up on time, study 9am-2pm, take a break, continue 4-6pm.';\n} else {\n  dayMessage = '🔴 WORK DAY (12H shift) — Light study only tonight. Review notes, one short video max. Save the heavy work for your off days.';\n}\n\n// Week preview string\nconst weekStr = weekPreview.map(d => \n  `${d.day} ${d.date}: ${d.type === 'F' ? '🟢 Free' : '🔴 Work'}${d.isSat ? ' 📚' : ''}`\n).join('\\n');\n\nreturn [{\n  json: {\n    today: today.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),\n    todayType,\n    isFree,\n    isSaturday,\n    isGymDay,\n    dayMessage,\n    trackTasks,\n    personalTasks,\n    prayers,\n    weekPreview,\n    weekStr\n  }\n}];"
+      },
+      "id": "calculate-day",
+      "name": "Calculate Day Type & Tasks",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build full HTML email\nconst data = $input.first().json;\n\nconst trackRows = data.trackTasks.map(t =>\n  `<tr>\n    <td style=\"padding:10px 14px;border-bottom:1px solid #f0f0f0;font-size:14px;color:#1a1a1a;\">☐ ${t.task}</td>\n    <td style=\"padding:10px 14px;border-bottom:1px solid #f0f0f0;font-size:13px;color:#666;\">${t.time}</td>\n    <td style=\"padding:10px 14px;border-bottom:1px solid #f0f0f0;font-size:12px;color:#999;\">${t.note || ''}</td>\n  </tr>`\n).join('');\n\nconst personalRows = data.personalTasks.map(t =>\n  `<tr>\n    <td style=\"padding:10px 14px;border-bottom:1px solid #f0f0f0;font-size:14px;color:#1a1a1a;\">☐ ${t.task}</td>\n    <td style=\"padding:10px 14px;border-bottom:1px solid #f0f0f0;font-size:13px;color:#666;\">${t.time}</td>\n    <td style=\"padding:10px 14px;border-bottom:1px solid #f0f0f0;font-size:12px;color:#999;\">${t.category || ''}</td>\n  </tr>`\n).join('');\n\nconst weekRows = data.weekPreview.map((d,i) =>\n  `<div style=\"display:inline-block;text-align:center;width:13%;margin:0 0.5%;padding:8px 4px;background:${i===0?'#EBF5FF':d.type==='F'?'#F0FDF4':'#FFF5F5'};border-radius:8px;\">\n    <div style=\"font-size:11px;color:#888;\">${d.day}</div>\n    <div style=\"font-size:13px;font-weight:600;color:#1a1a1a;margin:2px 0;\">${d.date}</div>\n    <div style=\"font-size:10px;color:${d.type==='F'?'#16a34a':'#dc2626'};\">${d.type==='F'?'Free':'Work'}${d.isSat?' 📚':''}</div>\n  </div>`\n).join('');\n\nconst dayColor = data.isSaturday ? '#7C3AED' : data.isFree ? '#16a34a' : '#dc2626';\nconst dayLabel = data.isSaturday ? 'DIPLOMA DAY' : data.isFree ? 'FREE DAY' : 'WORK DAY';\n\nconst html = `\n<!DOCTYPE html>\n<html>\n<head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"></head>\n<body style=\"margin:0;padding:0;background:#f5f5f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;\">\n\n<div style=\"max-width:600px;margin:24px auto;background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);\">\n\n  <!-- Header -->\n  <div style=\"background:${dayColor};padding:24px 28px;\">\n    <div style=\"font-size:11px;color:rgba(255,255,255,0.75);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:6px;\">Good morning, Loay</div>\n    <div style=\"font-size:22px;font-weight:600;color:#fff;\">${data.today}</div>\n    <div style=\"margin-top:10px;display:inline-block;background:rgba(255,255,255,0.2);padding:4px 12px;border-radius:20px;font-size:12px;color:#fff;font-weight:500;\">${dayLabel}</div>\n  </div>\n\n  <!-- Day message -->\n  <div style=\"padding:16px 28px;background:#fafafa;border-bottom:1px solid #f0f0f0;\">\n    <p style=\"margin:0;font-size:13px;color:#555;line-height:1.6;\">${data.dayMessage}</p>\n  </div>\n\n  <!-- Week strip -->\n  <div style=\"padding:16px 28px;border-bottom:1px solid #f0f0f0;\">\n    <div style=\"font-size:11px;font-weight:600;color:#999;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:10px;\">Next 7 days</div>\n    <div>${weekRows}</div>\n  </div>\n\n  <!-- Track tasks -->\n  <div style=\"padding:20px 28px 0;\">\n    <div style=\"font-size:13px;font-weight:600;color:#378ADD;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:2px;\">📘 Track tasks</div>\n    <table style=\"width:100%;border-collapse:collapse;margin-top:8px;\">\n      <thead><tr>\n        <th style=\"text-align:left;padding:8px 14px;font-size:11px;color:#999;font-weight:500;border-bottom:2px solid #f0f0f0;\">Task</th>\n        <th style=\"text-align:left;padding:8px 14px;font-size:11px;color:#999;font-weight:500;border-bottom:2px solid #f0f0f0;\">Time</th>\n        <th style=\"text-align:left;padding:8px 14px;font-size:11px;color:#999;font-weight:500;border-bottom:2px solid #f0f0f0;\">Note</th>\n      </tr></thead>\n      <tbody>${trackRows}</tbody>\n    </table>\n  </div>\n\n  <!-- Personal tasks -->\n  <div style=\"padding:20px 28px 0;\">\n    <div style=\"font-size:13px;font-weight:600;color:#D4537E;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:2px;\">🤲 Personal tasks</div>\n    <table style=\"width:100%;border-collapse:collapse;margin-top:8px;\">\n      <thead><tr>\n        <th style=\"text-align:left;padding:8px 14px;font-size:11px;color:#999;font-weight:500;border-bottom:2px solid #f0f0f0;\">Task</th>\n        <th style=\"text-align:left;padding:8px 14px;font-size:11px;color:#999;font-weight:500;border-bottom:2px solid #f0f0f0;\">Time</th>\n        <th style=\"text-align:left;padding:8px 14px;font-size:11px;color:#999;font-weight:500;border-bottom:2px solid #f0f0f0;\">Category</th>\n      </tr></thead>\n      <tbody>${personalRows}</tbody>\n    </table>\n  </div>\n\n  <!-- Prayer reminders -->\n  <div style=\"padding:20px 28px 0;\">\n    <div style=\"font-size:13px;font-weight:600;color:#7C3AED;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:10px;\">🕌 Prayer reminders today</div>\n    <div style=\"display:flex;gap:8px;flex-wrap:wrap;\">\n      ${data.prayers.map(p=>`<div style=\"background:#F5F3FF;border-radius:8px;padding:8px 14px;text-align:center;\"><div style=\"font-size:12px;font-weight:600;color:#7C3AED;\">${p.name}</div><div style=\"font-size:11px;color:#888;margin-top:2px;\">${p.time}</div></div>`).join('')}\n    </div>\n    <p style=\"font-size:11px;color:#aaa;margin-top:8px;\">Verify exact times with your prayer app (Cairo times may shift daily)</p>\n  </div>\n\n  <!-- Motivational footer -->\n  <div style=\"padding:20px 28px 28px;margin-top:20px;border-top:1px solid #f0f0f0;\">\n    <p style=\"margin:0;font-size:12px;color:#aaa;text-align:center;line-height:1.6;\">\n      72% success rate — you're building something real. Every day you study is a day closer to Jarvis.\n      <br>Diploma 1 starts 11 Jul 2026 · Jarvis MVP: Jul 2027\n    </p>\n  </div>\n\n</div>\n</body>\n</html>`;\n\nreturn [{ json: { html, subject: `🌅 ${data.today} — ${data.isSaturday ? 'Diploma Day!' : data.isFree ? 'Free Day — Study Hard' : 'Work Day — Light Study Tonight'}` } }];"
+      },
+      "id": "build-email",
+      "name": "Build Email HTML",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "loayalaa863@gmail.com",
+        "toEmail": "loayalaa863@gmail.com",
+        "subject": "={{ $json.subject }}",
+        "emailType": "html",
+        "message": "={{ $json.html }}"
+      },
+      "id": "send-email",
+      "name": "Send Morning Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "triggerAtHour": 3, "triggerAtMinute": 40 }
+          ]
+        }
+      },
+      "id": "trigger-fajr",
+      "name": "Fajr Reminder",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [0, 520]
+    },
+    {
+      "parameters": {
+        "fromEmail": "loayalaa863@gmail.com",
+        "toEmail": "loayalaa863@gmail.com",
+        "subject": "🕌 Fajr prayer time",
+        "emailType": "html",
+        "message": "<div style=\"font-family:sans-serif;padding:20px;max-width:400px;margin:auto;background:#F5F3FF;border-radius:12px;\"><h2 style=\"color:#7C3AED;margin:0 0 8px;\">🕌 Fajr</h2><p style=\"color:#555;margin:0;\">Time to pray Fajr. Rise, refresh, and start the day right.<br><br>Prayer time: <strong>03:45 AM</strong> (approximate — verify with your app)</p></div>"
+      },
+      "id": "remind-fajr",
+      "name": "Email — Fajr",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [220, 520]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "triggerAtHour": 11, "triggerAtMinute": 50 }
+          ]
+        }
+      },
+      "id": "trigger-dhuhr",
+      "name": "Dhuhr Reminder",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [0, 640]
+    },
+    {
+      "parameters": {
+        "fromEmail": "loayalaa863@gmail.com",
+        "toEmail": "loayalaa863@gmail.com",
+        "subject": "🕌 Dhuhr prayer time",
+        "emailType": "html",
+        "message": "<div style=\"font-family:sans-serif;padding:20px;max-width:400px;margin:auto;background:#F5F3FF;border-radius:12px;\"><h2 style=\"color:#7C3AED;margin:0 0 8px;\">🕌 Dhuhr</h2><p style=\"color:#555;margin:0;\">Dhuhr prayer time. Take a break, pray, then continue your day.<br><br>Prayer time: <strong>12:00 PM</strong> (approximate)</p></div>"
+      },
+      "id": "remind-dhuhr",
+      "name": "Email — Dhuhr",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [220, 640]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "triggerAtHour": 15, "triggerAtMinute": 20 }
+          ]
+        }
+      },
+      "id": "trigger-asr",
+      "name": "Asr Reminder",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [0, 760]
+    },
+    {
+      "parameters": {
+        "fromEmail": "loayalaa863@gmail.com",
+        "toEmail": "loayalaa863@gmail.com",
+        "subject": "🕌 Asr prayer time",
+        "emailType": "html",
+        "message": "<div style=\"font-family:sans-serif;padding:20px;max-width:400px;margin:auto;background:#F5F3FF;border-radius:12px;\"><h2 style=\"color:#7C3AED;margin:0 0 8px;\">🕌 Asr</h2><p style=\"color:#555;margin:0;\">Asr prayer time. Pause whatever you're doing.<br><br>Prayer time: <strong>03:30 PM</strong> (approximate)</p></div>"
+      },
+      "id": "remind-asr",
+      "name": "Email — Asr",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [220, 760]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "triggerAtHour": 18, "triggerAtMinute": 35 }
+          ]
+        }
+      },
+      "id": "trigger-maghrib",
+      "name": "Maghrib Reminder",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [0, 880]
+    },
+    {
+      "parameters": {
+        "fromEmail": "loayalaa863@gmail.com",
+        "toEmail": "loayalaa863@gmail.com",
+        "subject": "🕌 Maghrib prayer time",
+        "emailType": "html",
+        "message": "<div style=\"font-family:sans-serif;padding:20px;max-width:400px;margin:auto;background:#F5F3FF;border-radius:12px;\"><h2 style=\"color:#7C3AED;margin:0 0 8px;\">🕌 Maghrib</h2><p style=\"color:#555;margin:0;\">Maghrib prayer time. The sun has set — stop and pray.<br><br>Prayer time: <strong>06:45 PM</strong> (approximate)</p></div>"
+      },
+      "id": "remind-maghrib",
+      "name": "Email — Maghrib",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [220, 880]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "triggerAtHour": 20, "triggerAtMinute": 5 }
+          ]
+        }
+      },
+      "id": "trigger-isha",
+      "name": "Isha Reminder",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [0, 1000]
+    },
+    {
+      "parameters": {
+        "fromEmail": "loayalaa863@gmail.com",
+        "toEmail": "loayalaa863@gmail.com",
+        "subject": "🕌 Isha prayer time",
+        "emailType": "html",
+        "message": "<div style=\"font-family:sans-serif;padding:20px;max-width:400px;margin:auto;background:#F5F3FF;border-radius:12px;\"><h2 style=\"color:#7C3AED;margin:0 0 8px;\">🕌 Isha</h2><p style=\"color:#555;margin:0;\">Isha prayer time. End the day with prayer before you sleep.<br><br>Prayer time: <strong>08:15 PM</strong> (approximate)</p></div>"
+      },
+      "id": "remind-isha",
+      "name": "Email — Isha",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [220, 1000]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "triggerAtHour": 21, "triggerAtMinute": 30 }
+          ]
+        }
+      },
+      "id": "trigger-evening",
+      "name": "Evening Study Reminder",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [0, 1120]
+    },
+    {
+      "parameters": {
+        "jsCode": "const PATTERN = ['W','W','F','F','W','W','F','F','F','W','W','W','F','F'];\nconst ANCHOR = new Date('2026-07-12T00:00:00.000Z');\nfunction getDayType(date) {\n  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());\n  const a = new Date(ANCHOR.getFullYear(), ANCHOR.getMonth(), ANCHOR.getDate());\n  const diffDays = Math.floor((d - a) / (1000 * 60 * 60 * 24));\n  return PATTERN[((diffDays % 14) + 14) % 14];\n}\nconst today = new Date();\nconst isFree = getDayType(today) === 'F';\nconst isSaturday = today.getDay() === 6;\nlet msg = '';\nlet subject = '';\nif (isSaturday) {\n  subject = '📚 Did you attend today diploma session?';\n  msg = 'Saturday diploma session reminder — make sure you attended and reviewed your notes before sleeping.';\n} else if (isFree) {\n  subject = '📘 Evening study check — did you hit 30 minutes?';\n  msg = 'Free day evening check: did you study for at least 30 minutes today? If not, there is still time. Open your laptop, even 20 minutes counts.';\n} else {\n  subject = '📘 Light study reminder — just 20 minutes';\n  msg = 'Work day evening. You had a 12H shift — just review your notes for 20 minutes. No new topics. Then rest, you earned it.';\n}\nreturn [{ json: { subject, msg, isFree, isSaturday } }];"
+      },
+      "id": "check-day-evening",
+      "name": "Check Day Type — Evening",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 1120]
+    },
+    {
+      "parameters": {
+        "fromEmail": "loayalaa863@gmail.com",
+        "toEmail": "loayalaa863@gmail.com",
+        "subject": "={{ $json.subject }}",
+        "emailType": "html",
+        "message": "=<div style=\"font-family:sans-serif;padding:20px;max-width:500px;margin:auto;background:#EBF5FF;border-radius:12px;\"><h2 style=\"color:#378ADD;margin:0 0 8px;\">📘 Evening check-in</h2><p style=\"color:#333;line-height:1.6;\">{{ $json.msg }}</p><p style=\"color:#888;font-size:12px;margin-top:16px;\">Don't break the chain. Every day you study is one step closer to Jarvis.</p></div>"
+      },
+      "id": "remind-evening-study",
+      "name": "Email — Evening Study",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [440, 1120]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "triggerAtHour": 23, "triggerAtMinute": 0 }
+          ]
+        }
+      },
+      "id": "trigger-git",
+      "name": "Git Commit Reminder",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [0, 1240]
+    },
+    {
+      "parameters": {
+        "fromEmail": "loayalaa863@gmail.com",
+        "toEmail": "loayalaa863@gmail.com",
+        "subject": "🐙 Did you Git commit today?",
+        "emailType": "html",
+        "message": "<div style=\"font-family:sans-serif;padding:20px;max-width:500px;margin:auto;background:#F0FDF4;border-radius:12px;\"><h2 style=\"color:#16a34a;margin:0 0 8px;\">🐙 Git commit check</h2><p style=\"color:#333;line-height:1.6;\">Before you sleep — did you push your code today?<br><br>Even one line of code, one fix, one exercise — commit it. Your GitHub streak matters to employers.<br><br><strong>Open VS Code, git add, git commit, git push. 2 minutes.</strong></p><p style=\"color:#888;font-size:12px;margin-top:16px;\">Employers will look at your GitHub commit history in interviews. Make every day count.</p></div>"
+      },
+      "id": "remind-git",
+      "name": "Email — Git Commit",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [220, 1240]
+    }
+  ],
+  "connections": {
+    "Every Morning 6 AM": {
+      "main": [[{ "node": "Calculate Day Type & Tasks", "type": "main", "index": 0 }]]
+    },
+    "Calculate Day Type & Tasks": {
+      "main": [[{ "node": "Build Email HTML", "type": "main", "index": 0 }]]
+    },
+    "Build Email HTML": {
+      "main": [[{ "node": "Send Morning Email", "type": "main", "index": 0 }]]
+    },
+    "Fajr Reminder": {
+      "main": [[{ "node": "Email — Fajr", "type": "main", "index": 0 }]]
+    },
+    "Dhuhr Reminder": {
+      "main": [[{ "node": "Email — Dhuhr", "type": "main", "index": 0 }]]
+    },
+    "Asr Reminder": {
+      "main": [[{ "node": "Email — Asr", "type": "main", "index": 0 }]]
+    },
+    "Maghrib Reminder": {
+      "main": [[{ "node": "Email — Maghrib", "type": "main", "index": 0 }]]
+    },
+    "Isha Reminder": {
+      "main": [[{ "node": "Email — Isha", "type": "main", "index": 0 }]]
+    },
+    "Evening Study Reminder": {
+      "main": [[{ "node": "Check Day Type — Evening", "type": "main", "index": 0 }]]
+    },
+    "Check Day Type — Evening": {
+      "main": [[{ "node": "Email — Evening Study", "type": "main", "index": 0 }]]
+    },
+    "Git Commit Reminder": {
+      "main": [[{ "node": "Email — Git Commit", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-07-24T00:00:00.000Z",
+  "versionId": "1"
+}
