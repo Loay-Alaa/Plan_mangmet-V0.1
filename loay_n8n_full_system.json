@@ -1,0 +1,934 @@
+{
+  "name": "Loay - Full AI Developer Daily System (Outlook + Notion + Web Dashboard + Calendar)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 6,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "trig-morning",
+      "name": "Every Morning 6 AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\n// ============================================================\n// EDIT HERE IF YOUR SHIFT CHANGES\n// Anchor: Sunday 12 July 2026 = Work day (index 0)\n// ============================================================\nconst ANCHOR = new Date('2026-07-12T00:00:00.000Z');\nconst PATTERN = ['W','W','F','F','W','W','F','F','F','W','W','W','F','F'];\n// ============================================================\n\nfunction getDayType(date){\n  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());\n  const a = new Date(ANCHOR.getFullYear(), ANCHOR.getMonth(), ANCHOR.getDate());\n  const diffDays = Math.floor((d - a) / 86400000);\n  const idx = ((diffDays % 14) + 14) % 14;\n  return PATTERN[idx];\n}\nfunction isFree(date){ return getDayType(date) === 'F'; }\nfunction addDays(d,n){ const r = new Date(d); r.setDate(r.getDate()+n); return r; }\nfunction isGymDay(date){ return isFree(date) || isFree(addDays(date,1)); }\nfunction dayOfYear(date){\n  const start = new Date(date.getFullYear(),0,0);\n  return Math.floor((date - start) / 86400000);\n}\n\nconst today = new Date();\nconst todayType = getDayType(today);\nconst isFreeToday = todayType === 'F';\nconst isSaturday = today.getDay() === 6;\nconst gymToday = isGymDay(today);\n\n// ============================================================\n// MONTH 1 (July 2026) CONTENT LIBRARY — rotates so every\n// free/work day gets different real content. Update this\n// block when Month 2 starts.\n// ============================================================\nconst FREE_DAY_SETS = [\n  { title: 'NumPy block 1', items: ['Code NumPy exercises 1-5 (arrays, indexing, slicing)', 'Watch StatQuest: intro stats refresher (15 min)'] },\n  { title: 'NumPy block 2', items: ['Code NumPy exercises 6-10 (broadcasting, aggregation)', 'Push all NumPy exercises to GitHub'] },\n  { title: 'pandas - Keith Galli day 1', items: ['Watch + code along: DataFrames, CSV loading, .loc/.iloc (2.5h)', 'Use VS Code locally, not just Colab'] },\n  { title: 'pandas - Keith Galli day 2', items: ['Watch + code along: groupby, merge, concat, fillna/dropna (2.5h)', 'Save your practice notebook to GitHub'] },\n  { title: 'Data viz project - build', items: ['Pick a real CSV (Kaggle)', 'Clean it with pandas', 'Plot 2 of the 3 required charts (Matplotlib)'] },\n  { title: 'Data viz project - finish', items: ['Plot the 3rd chart + polish all 3', 'Write the README', 'git add, commit, push to GitHub'] }\n];\nconst WORK_DAY_SETS = [\n  { title: 'Light review - NumPy', items: ['Re-read your NumPy notes, 15-20 min only', 'No new topics tonight'] },\n  { title: 'Light review - pandas', items: ['Skim your pandas notebook from the last free day', '1 short StatQuest video max'] },\n  { title: 'Light review - last Saturday', items: ['Reread this week\\'s diploma notes', 'Note 1 question to ask next session'] }\n];\n\nconst doy = dayOfYear(today);\nconst freeSet = FREE_DAY_SETS[doy % FREE_DAY_SETS.length];\nconst workSet = WORK_DAY_SETS[doy % WORK_DAY_SETS.length];\n\nconst trackTasks = [];\nif (isFreeToday && !isSaturday) {\n  trackTasks.push({ task: freeSet.title, time: '9:00 AM to 2:00 PM', notes: freeSet.items.join(' | '), category: 'Deep study' });\n} else if (!isFreeToday) {\n  trackTasks.push({ task: workSet.title, time: 'Evening, 20 min', notes: workSet.items.join(' | '), category: 'Light review' });\n}\ntrackTasks.push({ task: 'Git commit', time: 'Before bed', notes: 'Push any code you touched today, even 1 line', category: 'Daily' });\nif (isSaturday) {\n  trackTasks.push({ task: 'Diploma 1 session', time: 'Full day, 6 hours', notes: 'Full focus, no distractions, take notes', category: 'Diploma' });\n}\n\nconst prayers = [\n  { name: 'Fajr', time: '03:45 AM' },\n  { name: 'Dhuhr', time: '12:00 PM' },\n  { name: 'Asr', time: '03:30 PM' },\n  { name: 'Maghrib', time: '06:45 PM' },\n  { name: 'Isha', time: '08:15 PM' }\n];\nconst personalTasks = prayers.map(p => ({ task: p.name + ' prayer', time: p.time, category: 'Prayer' }));\npersonalTasks.push({ task: 'Read 5 pages', time: 'Any time', category: 'Reading' });\nif (gymToday) {\n  personalTasks.push({ task: 'Gym session', time: 'Afternoon', category: 'Gym', notes: isFreeToday ? 'Free day' : 'Day before a free day' });\n}\n\nconst dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];\nconst weekPreview = [];\nfor (let i=0;i<7;i++){\n  const d = addDays(today,i);\n  weekPreview.push({ day: dayNames[d.getDay()], date: d.getDate()+'/'+(d.getMonth()+1), type: getDayType(d), isSat: d.getDay()===6, isGym: isGymDay(d) });\n}\n\nlet dayMessage = isSaturday ? 'DIPLOMA DAY - 6 hours, full focus.' :\n  isFreeToday ? 'FREE DAY - this is your deep study day.' :\n  'WORK DAY (12H shift) - light review only tonight, rest matters too.';\n\nreturn [{ json: {\n  today: today.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'}),\n  todayISO: today.toISOString().split('T')[0],\n  todayType, isFreeToday, isSaturday, gymToday, dayMessage,\n  trackTasks, personalTasks, weekPreview\n}}];\n"
+      },
+      "id": "calc-morning",
+      "name": "Calculate Today's Tasks",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.notion.com/v1/databases/8f4db78d-3506-4e61-bb27-41acab088145/query",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}"
+      },
+      "id": "notion-query",
+      "name": "Get Notion Progress",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst t = $('Calculate Today\\'s Tasks').first().json;\nlet doneCount = 0, totalCount = 0;\ntry {\n  const results = $input.first().json.results || [];\n  totalCount = results.length;\n  doneCount = results.filter(r => r.properties && r.properties['Done'] && r.properties['Done'].checkbox).length;\n} catch(e) {}\nconst pct = totalCount ? Math.round((doneCount/totalCount)*100) : 0;\n\nconst trackRows = t.trackTasks.map(x => '<tr><td style=\"padding:10px 14px;border-bottom:1px solid #f0f0f0;font-size:14px;\">' + x.task + '</td><td style=\"padding:10px 14px;border-bottom:1px solid #f0f0f0;font-size:12px;color:#666;\">' + x.time + '</td><td style=\"padding:10px 14px;border-bottom:1px solid #f0f0f0;font-size:11px;color:#999;\">' + (x.notes||'') + '</td></tr>').join('');\nconst personalRows = t.personalTasks.map(x => '<tr><td style=\"padding:10px 14px;border-bottom:1px solid #f0f0f0;font-size:14px;\">' + x.task + '</td><td style=\"padding:10px 14px;border-bottom:1px solid #f0f0f0;font-size:12px;color:#666;\">' + x.time + '</td><td style=\"padding:10px 14px;border-bottom:1px solid #f0f0f0;font-size:11px;color:#999;\">' + (x.notes||x.category||'') + '</td></tr>').join('');\nconst weekRows = t.weekPreview.map((d,i)=>'<div style=\"display:inline-block;text-align:center;width:13%;margin:0 0.5%;padding:8px 4px;background:'+(i===0?'#EBF5FF':d.type==='F'?'#F0FDF4':'#FFF5F5')+';border-radius:8px;\"><div style=\"font-size:10px;color:#888;\">'+d.day+'</div><div style=\"font-size:12px;font-weight:600;\">'+d.date+'</div><div style=\"font-size:9px;color:'+(d.type==='F'?'#16a34a':'#dc2626')+';\">'+(d.type==='F'?'Free':'Work')+(d.isSat?' - Diploma':'')+(d.isGym?' - Gym':'')+'</div></div>').join('');\n\nconst dayColor = t.isSaturday ? '#7C3AED' : t.isFreeToday ? '#16a34a' : '#dc2626';\nconst DASHBOARD_URL = 'https://n8n.elnourcompany.org/webhook/loay-dashboard';\nconst NOTION_URL = 'https://app.notion.com/p/8f4db78d35064e61bb2741acab088145';\n\nconst html = '<!DOCTYPE html><html><body style=\"margin:0;padding:0;background:#f5f5f5;font-family:-apple-system,sans-serif;\">' +\n'<div style=\"max-width:600px;margin:24px auto;background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);\">' +\n'<div style=\"background:'+dayColor+';padding:24px 28px;\">' +\n'<div style=\"font-size:11px;color:rgba(255,255,255,0.75);text-transform:uppercase;\">Good morning, Loay</div>' +\n'<div style=\"font-size:22px;font-weight:600;color:#fff;\">'+t.today+'</div></div>' +\n'<div style=\"padding:16px 28px;background:#fafafa;border-bottom:1px solid #f0f0f0;\"><p style=\"margin:0;font-size:13px;color:#555;\">'+t.dayMessage+'</p></div>' +\n'<div style=\"padding:16px 28px;\"><div style=\"font-size:11px;font-weight:600;color:#999;text-transform:uppercase;margin-bottom:8px;\">Progress: '+pct+'% of tracked tasks done</div>' +\n'<div style=\"background:#eee;border-radius:20px;height:8px;overflow:hidden;\"><div style=\"background:'+dayColor+';height:8px;width:'+pct+'%;\"></div></div></div>' +\n'<div style=\"padding:0 28px 16px;\"><div style=\"font-size:11px;font-weight:600;color:#999;text-transform:uppercase;margin-bottom:10px;\">Next 7 days</div><div>'+weekRows+'</div></div>' +\n'<div style=\"padding:20px 28px 0;\"><div style=\"font-size:13px;font-weight:600;color:#378ADD;text-transform:uppercase;\">Track</div><table style=\"width:100%;border-collapse:collapse;margin-top:8px;\">'+trackRows+'</table></div>' +\n'<div style=\"padding:20px 28px 0;\"><div style=\"font-size:13px;font-weight:600;color:#D4537E;text-transform:uppercase;\">Personal</div><table style=\"width:100%;border-collapse:collapse;margin-top:8px;\">'+personalRows+'</table></div>' +\n'<div style=\"padding:24px 28px;text-align:center;\"><a href=\"'+DASHBOARD_URL+'\" style=\"display:inline-block;background:'+dayColor+';color:#fff;padding:10px 22px;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600;margin-right:8px;\">Open Live Dashboard</a><a href=\"'+NOTION_URL+'\" style=\"display:inline-block;background:#eee;color:#333;padding:10px 22px;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600;\">Open Notion</a></div>' +\n'</div></body></html>';\n\nreturn [{ json: { html: html, subject: t.today + ' - ' + pct + '% done, ' + (t.isSaturday?'Diploma Day':t.isFreeToday?'Free Day':'Work Day') } }];\n"
+      },
+      "id": "build-email",
+      "name": "Build Email HTML",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "subject": "={{ $json.subject }}",
+        "bodyContent": "={{ $json.html }}",
+        "toRecipients": "loayalaa863@gmail.com",
+        "additionalFields": {
+          "bodyContentType": "html"
+        }
+      },
+      "id": "send-morning",
+      "name": "Outlook - Morning Email",
+      "type": "n8n-nodes-base.microsoftOutlook",
+      "typeVersion": 2,
+      "position": [
+        880,
+        0
+      ],
+      "credentials": {
+        "microsoftOutlookOAuth2Api": {
+          "id": "1",
+          "name": "Outlook account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 3,
+              "triggerAtMinute": 40
+            }
+          ]
+        }
+      },
+      "id": "trig-fajr",
+      "name": "Fajr Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "subject": "Fajr prayer time",
+        "bodyContent": "<div style='font-family:sans-serif;padding:20px;background:#F5F3FF;border-radius:12px;'><h2 style='color:#7C3AED;'>Fajr</h2><p>03:45 AM - verify with your prayer app.</p></div>",
+        "toRecipients": "loayalaa863@gmail.com",
+        "additionalFields": {
+          "bodyContentType": "html"
+        }
+      },
+      "id": "send-fajr",
+      "name": "Outlook - Fajr",
+      "type": "n8n-nodes-base.microsoftOutlook",
+      "typeVersion": 2,
+      "position": [
+        220,
+        200
+      ],
+      "credentials": {
+        "microsoftOutlookOAuth2Api": {
+          "id": "1",
+          "name": "Outlook account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 11,
+              "triggerAtMinute": 50
+            }
+          ]
+        }
+      },
+      "id": "trig-dhuhr",
+      "name": "Dhuhr Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "subject": "Dhuhr prayer time",
+        "bodyContent": "<div style='font-family:sans-serif;padding:20px;background:#F5F3FF;border-radius:12px;'><h2 style='color:#7C3AED;'>Dhuhr</h2><p>12:00 PM - verify with your prayer app.</p></div>",
+        "toRecipients": "loayalaa863@gmail.com",
+        "additionalFields": {
+          "bodyContentType": "html"
+        }
+      },
+      "id": "send-dhuhr",
+      "name": "Outlook - Dhuhr",
+      "type": "n8n-nodes-base.microsoftOutlook",
+      "typeVersion": 2,
+      "position": [
+        220,
+        320
+      ],
+      "credentials": {
+        "microsoftOutlookOAuth2Api": {
+          "id": "1",
+          "name": "Outlook account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 15,
+              "triggerAtMinute": 20
+            }
+          ]
+        }
+      },
+      "id": "trig-asr",
+      "name": "Asr Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "subject": "Asr prayer time",
+        "bodyContent": "<div style='font-family:sans-serif;padding:20px;background:#F5F3FF;border-radius:12px;'><h2 style='color:#7C3AED;'>Asr</h2><p>03:30 PM - verify with your prayer app.</p></div>",
+        "toRecipients": "loayalaa863@gmail.com",
+        "additionalFields": {
+          "bodyContentType": "html"
+        }
+      },
+      "id": "send-asr",
+      "name": "Outlook - Asr",
+      "type": "n8n-nodes-base.microsoftOutlook",
+      "typeVersion": 2,
+      "position": [
+        220,
+        440
+      ],
+      "credentials": {
+        "microsoftOutlookOAuth2Api": {
+          "id": "1",
+          "name": "Outlook account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 18,
+              "triggerAtMinute": 35
+            }
+          ]
+        }
+      },
+      "id": "trig-maghrib",
+      "name": "Maghrib Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "subject": "Maghrib prayer time",
+        "bodyContent": "<div style='font-family:sans-serif;padding:20px;background:#F5F3FF;border-radius:12px;'><h2 style='color:#7C3AED;'>Maghrib</h2><p>06:45 PM - verify with your prayer app.</p></div>",
+        "toRecipients": "loayalaa863@gmail.com",
+        "additionalFields": {
+          "bodyContentType": "html"
+        }
+      },
+      "id": "send-maghrib",
+      "name": "Outlook - Maghrib",
+      "type": "n8n-nodes-base.microsoftOutlook",
+      "typeVersion": 2,
+      "position": [
+        220,
+        560
+      ],
+      "credentials": {
+        "microsoftOutlookOAuth2Api": {
+          "id": "1",
+          "name": "Outlook account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 20,
+              "triggerAtMinute": 5
+            }
+          ]
+        }
+      },
+      "id": "trig-isha",
+      "name": "Isha Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        680
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "subject": "Isha prayer time",
+        "bodyContent": "<div style='font-family:sans-serif;padding:20px;background:#F5F3FF;border-radius:12px;'><h2 style='color:#7C3AED;'>Isha</h2><p>08:15 PM - verify with your prayer app.</p></div>",
+        "toRecipients": "loayalaa863@gmail.com",
+        "additionalFields": {
+          "bodyContentType": "html"
+        }
+      },
+      "id": "send-isha",
+      "name": "Outlook - Isha",
+      "type": "n8n-nodes-base.microsoftOutlook",
+      "typeVersion": 2,
+      "position": [
+        220,
+        680
+      ],
+      "credentials": {
+        "microsoftOutlookOAuth2Api": {
+          "id": "1",
+          "name": "Outlook account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 23,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "trig-git",
+      "name": "Git Reminder Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "subject": "Did you Git commit today?",
+        "bodyContent": "<div style='font-family:sans-serif;padding:20px;background:#F0FDF4;border-radius:12px;'><h2 style='color:#16a34a;'>Git check</h2><p>Push your code before you sleep. Even 1 line counts.</p></div>",
+        "toRecipients": "loayalaa863@gmail.com",
+        "additionalFields": {
+          "bodyContentType": "html"
+        }
+      },
+      "id": "send-git",
+      "name": "Outlook - Git Reminder",
+      "type": "n8n-nodes-base.microsoftOutlook",
+      "typeVersion": 2,
+      "position": [
+        220,
+        800
+      ],
+      "credentials": {
+        "microsoftOutlookOAuth2Api": {
+          "id": "1",
+          "name": "Outlook account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 20,
+              "triggerAtMinute": 0,
+              "triggerAtDayOfWeek": [
+                5
+              ]
+            }
+          ]
+        }
+      },
+      "id": "trig-weekly",
+      "name": "Friday Weekly Report",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        920
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.notion.com/v1/databases/8f4db78d-3506-4e61-bb27-41acab088145/query",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}"
+      },
+      "id": "notion-weekly",
+      "name": "Get Notion - Weekly",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        920
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst results = $input.first().json.results || [];\nconst total = results.length;\nconst done = results.filter(r => r.properties && r.properties['Done'] && r.properties['Done'].checkbox).length;\nconst pct = total ? Math.round((done/total)*100) : 0;\nlet verdict = pct >= 80 ? 'On track - strong week.' : pct >= 50 ? 'Mixed week - pick it back up.' : 'Behind - Saturday is a reset, not a write-off.';\nconst html = '<div style=\"font-family:sans-serif;padding:24px;max-width:500px;margin:auto;background:#fff;border-radius:12px;border:1px solid #eee;\"><h2 style=\"color:#333;\">Weekly progress report</h2><p style=\"font-size:32px;font-weight:700;color:#378ADD;margin:8px 0;\">'+pct+'%</p><p style=\"color:#555;\">'+done+' of '+total+' recurring tasks marked done this week.</p><p style=\"color:#333;font-weight:600;\">'+verdict+'</p></div>';\nreturn [{ json: { html: html, subject: 'Weekly report - ' + pct + '% complete' } }];\n"
+      },
+      "id": "build-weekly",
+      "name": "Build Weekly Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        920
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "subject": "={{ $json.subject }}",
+        "bodyContent": "={{ $json.html }}",
+        "toRecipients": "loayalaa863@gmail.com",
+        "additionalFields": {
+          "bodyContentType": "html"
+        }
+      },
+      "id": "send-weekly",
+      "name": "Outlook - Weekly Report",
+      "type": "n8n-nodes-base.microsoftOutlook",
+      "typeVersion": 2,
+      "position": [
+        660,
+        920
+      ],
+      "credentials": {
+        "microsoftOutlookOAuth2Api": {
+          "id": "1",
+          "name": "Outlook account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 5,
+              "triggerAtMinute": 0,
+              "triggerAtDayOfMonth": 1
+            }
+          ]
+        }
+      },
+      "id": "trig-monthly-cal",
+      "name": "Monthly Calendar Sync (1st)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        1080
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst ANCHOR = new Date('2026-07-12T00:00:00.000Z');\nconst PATTERN = ['W','W','F','F','W','W','F','F','F','W','W','W','F','F'];\nfunction getDayType(date){\n  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());\n  const a = new Date(ANCHOR.getFullYear(), ANCHOR.getMonth(), ANCHOR.getDate());\n  const diffDays = Math.floor((d - a) / 86400000);\n  return PATTERN[((diffDays % 14) + 14) % 14];\n}\nfunction isFree(d){ return getDayType(d) === 'F'; }\nfunction addDays(d,n){ const r = new Date(d); r.setDate(r.getDate()+n); return r; }\nfunction isGymDay(d){ return isFree(d) || isFree(addDays(d,1)); }\nfunction pad(n){ return n<10?'0'+n:''+n; }\nfunction iso(d,h,m){ return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(h)+':'+pad(m)+':00'; }\n\nconst events = [];\nconst today = new Date();\nfor (let i=0;i<30;i++){\n  const d = addDays(today,i);\n  if (d.getDay()===6){\n    events.push({ subject: 'Diploma 1 session', start: iso(d,9,0), end: iso(d,15,0) });\n  }\n  if (isGymDay(d)){\n    events.push({ subject: 'Gym', start: iso(d,16,0), end: iso(d,17,30) });\n  }\n  if (!isFree(d) && d.getDay()!==6){\n    events.push({ subject: 'Light study review', start: iso(d,21,0), end: iso(d,21,30) });\n  } else if (isFree(d) && d.getDay()!==6){\n    events.push({ subject: 'Deep study block', start: iso(d,9,0), end: iso(d,14,0) });\n  }\n}\nreturn events.map(e => ({ json: e }));\n"
+      },
+      "id": "gen-cal-events",
+      "name": "Generate Month Events",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        1080
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "event",
+        "operation": "create",
+        "subject": "={{ $json.subject }}",
+        "start": "={{ $json.start }}",
+        "end": "={{ $json.end }}"
+      },
+      "id": "create-cal-event",
+      "name": "Outlook Calendar - Create Event",
+      "type": "n8n-nodes-base.microsoftOutlook",
+      "typeVersion": 2,
+      "position": [
+        440,
+        1080
+      ],
+      "credentials": {
+        "microsoftOutlookOAuth2Api": {
+          "id": "1",
+          "name": "Outlook account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "loay-dashboard",
+        "responseMode": "responseNode"
+      },
+      "id": "webhook-dashboard",
+      "name": "Webhook - Dashboard Page",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        1260
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst ANCHOR = new Date('2026-07-12T00:00:00.000Z');\nconst PATTERN = ['W','W','F','F','W','W','F','F','F','W','W','W','F','F'];\nfunction getDayType(date){ const d=new Date(date.getFullYear(),date.getMonth(),date.getDate()); const a=new Date(ANCHOR.getFullYear(),ANCHOR.getMonth(),ANCHOR.getDate()); const diff=Math.floor((d-a)/86400000); return PATTERN[((diff%14)+14)%14]; }\nfunction isFree(d){ return getDayType(d)==='F'; }\nfunction addDays(d,n){ const r=new Date(d); r.setDate(r.getDate()+n); return r; }\nfunction isGymDay(d){ return isFree(d) || isFree(addDays(d,1)); }\nconst today = new Date();\nconst todayType = getDayType(today);\nconst isSaturday = today.getDay()===6;\nconst isFreeToday = todayType==='F';\nconst gymToday = isGymDay(today);\nreturn [{ json: { today: today.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'}), todayType, isSaturday, isFreeToday, gymToday } }];\n"
+      },
+      "id": "dash-calc",
+      "name": "Dashboard - Calc Day",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        1260
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.notion.com/v1/databases/8f4db78d-3506-4e61-bb27-41acab088145/query",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}"
+      },
+      "id": "dash-notion-query",
+      "name": "Dashboard - Get Notion Rows",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        1260
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst d = $('Dashboard - Calc Day').first().json;\nconst results = $input.first().json.results || [];\nconst TOGGLE_URL = 'https://n8n.elnourcompany.org/webhook/loay-toggle-task';\n\nconst rows = results.map(r => {\n  const props = r.properties;\n  const name = props['Task'] && props['Task'].title && props['Task'].title[0] ? props['Task'].title[0].plain_text : 'Untitled';\n  const done = props['Done'] && props['Done'].checkbox;\n  const dashboard = props['Dashboard'] && props['Dashboard'].select ? props['Dashboard'].select.name : '';\n  const time = props['Time'] && props['Time'].rich_text && props['Time'].rich_text[0] ? props['Time'].rich_text[0].plain_text : '';\n  const pageId = r.id;\n  const link = TOGGLE_URL + '?id=' + pageId + '&status=' + (!done);\n  return '<tr><td style=\"padding:10px 14px;border-bottom:1px solid #eee;\"><a href=\"'+link+'\" style=\"text-decoration:none;color:'+(done?'#999':'#1a1a1a')+';font-size:14px;'+(done?'text-decoration:line-through;':'')+'\">'+name+'</a></td><td style=\"padding:10px 14px;border-bottom:1px solid #eee;font-size:12px;color:#888;\">'+time+'</td><td style=\"padding:10px 14px;border-bottom:1px solid #eee;font-size:11px;color:#aaa;\">'+dashboard+'</td></tr>';\n}).join('');\n\nconst pct = results.length ? Math.round((results.filter(r=>r.properties['Done'].checkbox).length/results.length)*100) : 0;\nconst dayColor = d.isSaturday ? '#7C3AED' : d.isFreeToday ? '#16a34a' : '#dc2626';\n\nconst html = '<!DOCTYPE html><html><head><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"></head><body style=\"margin:0;padding:20px;background:#f5f5f5;font-family:-apple-system,sans-serif;\">' +\n'<div style=\"max-width:600px;margin:auto;background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);\">' +\n'<div style=\"background:'+dayColor+';padding:24px;\"><div style=\"color:rgba(255,255,255,0.8);font-size:12px;text-transform:uppercase;\">Live Dashboard</div><div style=\"color:#fff;font-size:20px;font-weight:600;\">'+d.today+'</div></div>' +\n'<div style=\"padding:16px 24px;\"><div style=\"font-size:11px;color:#999;text-transform:uppercase;margin-bottom:6px;\">Today: '+pct+'% complete</div><div style=\"background:#eee;border-radius:20px;height:8px;\"><div style=\"background:'+dayColor+';height:8px;width:'+pct+'%;border-radius:20px;\"></div></div></div>' +\n'<div style=\"padding:0 24px 24px;\"><table style=\"width:100%;border-collapse:collapse;\">'+rows+'</table></div>' +\n'<div style=\"padding:16px 24px;background:#fafafa;font-size:11px;color:#aaa;\">Tap any task to check or uncheck it - it saves straight to Notion.</div>' +\n'</div></body></html>';\n\nreturn [{ json: { html: html } }];\n"
+      },
+      "id": "dash-build",
+      "name": "Dashboard - Build Page",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        1260
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.html }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html"
+              }
+            ]
+          }
+        }
+      },
+      "id": "dash-respond",
+      "name": "Respond - Dashboard HTML",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        880,
+        1260
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "loay-toggle-task",
+        "responseMode": "responseNode"
+      },
+      "id": "webhook-toggle",
+      "name": "Webhook - Toggle Task",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        1460
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://api.notion.com/v1/pages/{{ $json.query.id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ properties: { Done: { checkbox: $json.query.status === 'true' } } }) }}"
+      },
+      "id": "toggle-notion",
+      "name": "Toggle - Update Notion",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        1460
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "redirect",
+        "redirectURL": "https://n8n.elnourcompany.org/webhook/loay-dashboard"
+      },
+      "id": "toggle-respond",
+      "name": "Respond - Redirect to Dashboard",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        440,
+        1460
+      ]
+    }
+  ],
+  "connections": {
+    "Every Morning 6 AM": {
+      "main": [
+        [
+          {
+            "node": "Calculate Today's Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Today's Tasks": {
+      "main": [
+        [
+          {
+            "node": "Get Notion Progress",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Notion Progress": {
+      "main": [
+        [
+          {
+            "node": "Build Email HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Email HTML": {
+      "main": [
+        [
+          {
+            "node": "Outlook - Morning Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fajr Trigger": {
+      "main": [
+        [
+          {
+            "node": "Outlook - Fajr",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dhuhr Trigger": {
+      "main": [
+        [
+          {
+            "node": "Outlook - Dhuhr",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Asr Trigger": {
+      "main": [
+        [
+          {
+            "node": "Outlook - Asr",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Maghrib Trigger": {
+      "main": [
+        [
+          {
+            "node": "Outlook - Maghrib",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Isha Trigger": {
+      "main": [
+        [
+          {
+            "node": "Outlook - Isha",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Git Reminder Trigger": {
+      "main": [
+        [
+          {
+            "node": "Outlook - Git Reminder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Friday Weekly Report": {
+      "main": [
+        [
+          {
+            "node": "Get Notion - Weekly",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Notion - Weekly": {
+      "main": [
+        [
+          {
+            "node": "Build Weekly Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Weekly Report": {
+      "main": [
+        [
+          {
+            "node": "Outlook - Weekly Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Monthly Calendar Sync (1st)": {
+      "main": [
+        [
+          {
+            "node": "Generate Month Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Month Events": {
+      "main": [
+        [
+          {
+            "node": "Outlook Calendar - Create Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook - Dashboard Page": {
+      "main": [
+        [
+          {
+            "node": "Dashboard - Calc Day",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dashboard - Calc Day": {
+      "main": [
+        [
+          {
+            "node": "Dashboard - Get Notion Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dashboard - Get Notion Rows": {
+      "main": [
+        [
+          {
+            "node": "Dashboard - Build Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dashboard - Build Page": {
+      "main": [
+        [
+          {
+            "node": "Respond - Dashboard HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook - Toggle Task": {
+      "main": [
+        [
+          {
+            "node": "Toggle - Update Notion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Toggle - Update Notion": {
+      "main": [
+        [
+          {
+            "node": "Respond - Redirect to Dashboard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "versionId": "2"
+}
